@@ -1,0 +1,369 @@
+---
+title: "Comparaciones de AUC para modelos de clasificación en tidymodels"
+author: "Gustavo Gimenez"
+format:
+  html:
+    theme: materia
+    toc: true
+    toc-depth: 3
+    toc-title: "Contenidos"
+    number-sections: true
+editor: visual
+---
+
+# Exploración de datos
+
+Se utilizan los datos de **Carseats** de la librería *ISLR* un benchmark muy utilizado. Un conjunto de datos con 400 filas y 11 variables. Correspondiente a la venta de asientos o sillitas para acomodar a los bebés en el auto.
+
+```{r}
+library(ISLR)
+data("Carseats")
+datos <-  Carseats
+head(datos, 3)
+```
+
+Se utiliza la librería skimr para hacer un EDA completo.
+
+```{r}
+library(skimr)
+skim(datos)
+```
+
+Se observan 3 variables clasificatorias tipo factor y 8 numéricas.
+
+Se va a clasificar la variable de acuerdo a si la venta es alta o no sobre la columna Sales. De manera que cuando la variable es mayor a 8 (un poco mayor a la media) sea alta y cuando es menor baja. Ésta va a ser nuestra variable de respuesta.
+
+```{r}
+datos$ventas_altas <- ifelse(test = datos$Sales > 8, 
+                             yes = "Si", no = "No")
+
+# Conversión de la variable respuesta a tipo factor
+datos$ventas_altas <- as.factor(datos$ventas_altas)
+
+# Una vez creada la nueva variable respuesta se descarta la original
+datos$Sales = NULL
+```
+
+Determinar si es muy importante el desbalance
+
+```{r}
+library(tidyverse)
+ggplot(datos, aes(ventas_altas, fill=ventas_altas)) + geom_bar()
+```
+
+```{r}
+datos |> count(ventas_altas) |> mutate(prop = n/sum(n))
+```
+
+# Ajuste de modelos usando tidymodels
+
+Se cargan las librerías tidymodels y yardstick(evaluar la performance de los modelos.)
+
+```{r}
+library(tidymodels)
+library(yardstick)
+```
+
+Se divide el conjunto de datos en datos de entrenamiento y datos de testeo por defecto es 0.75 de entrenamiento y 0.25 de testeo. El objetivo es predecir las ventas altas de las sillitas.
+
+```{r}
+data_split <- initial_split(datos, strata = ventas_altas)
+train_data <- training(data_split)
+testing_data <- testing(data_split)
+```
+
+## Comparación de los modelos de regresión logística y random forest
+
+```{r}
+# Se establece el modelo de regresión logistica
+logistic_model <- logistic_reg() %>% 
+  set_engine("glm") %>% 
+  set_mode("classification")
+
+# Se establece el modelo de random forest
+rf_model <- rand_forest() %>% 
+  set_engine("ranger", probability = TRUE) %>% 
+  set_mode("classification")
+```
+
+Se declara el flujo de trabajo (workflow) para uno y otro modelo
+
+```{r}
+# Workflow para regresión logística
+logistic_wf <- workflow() %>%
+  add_model(logistic_model) %>%
+  add_formula(ventas_altas ~ .)
+
+# Workflow para random forest
+rf_wf <- workflow() %>%
+  add_model(rf_model) %>%
+  add_formula(ventas_altas ~ .)
+```
+
+Se ajustan los datos de entrenamiento con la regresión logística.
+
+```{r}
+logistic_fit <- fit(logistic_wf, data = train_data)
+rf_fit <- fit(rf_wf, data = train_data)
+```
+
+Se ajustan y comprueban sobre los datos de testeo.
+
+```{r}
+logistic_pred <- predict(logistic_fit, testing_data, type = "prob",) %>% 
+  bind_cols(testing_data)
+
+rf_pred <- predict(rf_fit, testing_data, type = "prob") %>% 
+  bind_cols(testing_data)
+```
+
+```{r}
+# Para regresión logística
+logistic_auc <- logistic_pred %>% 
+  roc_auc(truth = ventas_altas,  .pred_Si, 
+  event_level = "second")
+
+# Para random forest
+rf_auc <- rf_pred %>% 
+  roc_auc(truth = ventas_altas,  .pred_Si, , 
+  event_level = "second")
+```
+
+```{r}
+comparison <- bind_rows(
+  logistic_auc %>% mutate(model = "Regresión Logística"),
+  rf_auc %>% mutate(model = "Random Forest")
+)
+
+comparison %>% 
+  select(model, .estimate) %>% 
+  arrange(desc(.estimate))
+```
+
+Es mejor utilizar y hacer una comparación de los métodos a partir de una validación cruzada.
+
+## Comparación utilizando validación cruzada
+
+```{r}
+# Definir folds elijo 5 para reducir tiempo
+folds <- vfold_cv(train_data, v = 5)
+
+
+# Función para evaluar un modelo con resampling 
+eval_model <- function(wf) {
+  wf %>% 
+    fit_resamples(
+      resamples = folds,
+      metrics = metric_set(roc_auc),
+      control = control_resamples(save_pred = TRUE)
+    )
+}
+
+# Evaluar ambos modelos
+logistic_res <- eval_model(logistic_wf)
+rf_res <- eval_model(rf_wf)
+
+# Comparar resultados
+
+bind_rows(collect_metrics(logistic_res),
+collect_metrics(rf_res)
+)
+```
+
+Graficar las curvas roc de uno y otro método
+
+```{r}
+library(patchwork)
+# Para regresión logística
+gglogis <- logistic_pred %>% 
+  roc_curve(truth = ventas_altas,.pred_Si) %>% 
+  autoplot() +
+  ggtitle("Curva ROC - Regresión Logística")
+
+
+# Para random forest
+ggrf <- rf_pred %>% 
+  roc_curve(truth = ventas_altas,  .pred_Si) %>% 
+  autoplot() +
+  ggtitle("Curva ROC - Random Forest")
+gglogis+ggrf
+```
+
+Tener en cuenta que Random Forest no ha sido calibrado
+
+Curvas ROC en una misma gráfica.
+
+```{r}
+# O superpuestas
+bind_rows(
+  logistic_pred %>% mutate(model = "Regresión Logística"),
+  rf_pred %>% mutate(model = "Random Forest")
+) %>% 
+  group_by(model) %>% 
+  roc_curve(truth = ventas_altas, .pred_Si) %>% 
+  autoplot()
+```
+
+Se advierte que regresión logística posee mayor área por lo tanto mejor predice los positivos.
+
+## Comparación de la significancia de AUC mediante el método de bootstrap
+
+En el método de bootstraping se utiliza los datos de entrenamiento para hacer un muestreo con reposición del mismo tamaño que el original.
+
+```{r warning=FALSE}
+library(rsample)
+library(yardstick)
+
+# Configurar bootstrap (100-1000 repeticiones)
+
+boot_samples <- bootstraps(train_data, times = 500)
+
+# Función para calcular AUC en cada remuestra
+compute_auc <- function(split) {
+  # Ajustar modelos
+  logistic_fit <- fit(logistic_wf, analysis(split))
+  rf_fit <- fit(rf_wf, analysis(split))
+  
+  # Predecir en muestra de evaluación
+  logistic_pred <- predict(logistic_fit, assessment(split), type = "prob")
+  rf_pred <- predict(rf_fit, assessment(split), type = "prob")
+  
+  # Calcular AUCs
+  logistic_auc <- roc_auc_vec(truth = assessment(split)$ventas_altas,
+                             estimate = logistic_pred$.pred_Si)
+  rf_auc <- roc_auc_vec(truth = assessment(split)$ventas_altas,
+                       estimate = rf_pred$.pred_Si)
+  
+  # Retornar diferencia
+  tibble(
+    logistic_auc = logistic_auc,
+    rf_auc = rf_auc,
+    difference = rf_auc - logistic_auc
+  )
+}
+
+# Aplicar a todas las muestras bootstrap
+auc_results <- map_df(boot_samples$splits, compute_auc)
+# Intervalo de confianza bootstrap para la diferencia
+quantile(auc_results$difference, probs = c(0.025, 0.975))
+puntos <- as_tibble(quantile(auc_results$difference, probs = c(0.025,0.5, 0.975)))
+puntos <- puntos |> mutate(count = c(1,1,1)) |> rename(difference = value)
+```
+
+En éste bootstrap de la diferencia se obtuvo un intervalo de confianza del 95% el valor central es `r puntos[2,1]` como el intervalo va desde `r puntos[1,1]` a `r puntos[3,1]`, no incluye al cero por lo tanto hay diferencias significativas.
+
+Gráfico de histograma sobre la diferencia con los 500 bootstrap
+
+```{r}
+#Éste gráfico siempre armo par bootstrap me encanta
+ggplot(auc_results, aes(x=difference)) + 
+  geom_histogram(color = "black", fill = "lightblue") + 
+  geom_point(data=puntos, aes(x = difference, y = count),
+             pch=25, 
+             size=4,
+             fill="red",
+             colour="red") 
+```
+
+## Utilizando el método de DeLong
+
+El método de Delong es bastante específico y se puede obtener así.
+
+```{r}
+library(pROC)
+
+# Obtener predicciones para ambos modelos
+logistic_roc <- roc(testing_data$ventas_altas, logistic_pred$.pred_Si)
+rf_roc <- roc(testing_data$ventas_altas, rf_pred$.pred_Si)
+
+# Test de DeLong para comparar AUCs
+delong_test <- roc.test(logistic_roc, rf_roc, method = "delong")
+delong_test
+```
+
+Se rechaza, hay diferencias (bastante parecidas a la del bootstrap )
+
+## Tercera opción validación cruzada pareada
+
+```{r}
+library(doParallel) # Para procesamiento paralelo
+
+# Configurar validación cruzada, cambié el número de fold para poder hacer 
+# las comparaciones.
+
+folds <- vfold_cv(train_data, v = 10, strata = ventas_altas)
+
+# Función para obtener AUC en cada fold
+get_cv_auc <- function(split) {
+  # Entrenar modelos
+  logistic_fit <- fit(logistic_wf, analysis(split))
+  rf_fit <- fit(rf_wf, analysis(split))
+  
+  # Predecir
+  logistic_pred <- predict(logistic_fit, assessment(split), type = "prob")
+  rf_pred <- predict(rf_fit, assessment(split), type = "prob")
+  
+  # Calcular AUCs
+  tibble(
+    fold = split$id,
+    logistic = roc_auc_vec(assessment(split)$ventas_altas, logistic_pred$.pred_Si, ,
+  event_level = "second"),
+    rf = roc_auc_vec(assessment(split)$ventas_altas, rf_pred$.pred_Si, 
+  event_level = "second")
+  )
+}
+
+```
+
+Calcular las métricas para cada fold .
+
+```{r}
+
+# Calcular métricas en todos los folds
+registerDoParallel() # Activar paralelización
+cv_results <- map_df(folds$splits, get_cv_auc)
+stopImplicitCluster() # Desactivar paralelización
+
+# Test t pareado
+t_test_result <- t.test(cv_results$logistic, cv_results$rf, paired = TRUE)
+t_test_result
+
+```
+
+En este caso, indica mayor diferencia.
+
+```{r}
+
+# Visualización
+cv_results %>%
+  pivot_longer(cols = c(logistic, rf), names_to = "model", values_to = "auc") %>%
+  ggplot(aes(x = model, y = auc, fill = model)) +
+  geom_boxplot() +
+  labs(title = "Comparación de AUC en Validación Cruzada",
+       y = "AUC", x = "Modelo") +
+  theme_minimal()
+```
+
+# Predicción final teniendo en cuenta el mejor modelo
+
+Ajuste con todos los datos de entrenamiento
+
+```{r}
+logistic_fit <- fit(logistic_wf, data = train_data)
+
+```
+
+Predicción sobre los datos de testeo
+
+```{r}
+logistic_pred <- predict(logistic_fit, testing_data, type = "prob") %>%
+  bind_cols(testing_data)
+
+```
+
+Evaluación
+
+```{r}
+roc_auc(logistic_pred, truth = ventas_altas, .pred_Si, event_level = "second")
+
+```
