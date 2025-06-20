@@ -442,7 +442,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 ✖ dplyr::lag()      masks stats::lag()
 ✖ yardstick::spec() masks readr::spec()
 ✖ recipes::step()   masks stats::step()
-• Use suppressPackageStartupMessages() to eliminate package startup messages</code></pre>
+• Search for functions across packages at https://www.tidymodels.org/find/</code></pre>
 </div>
 <div class="sourceCode cell-code" id="cb14"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(yardstick)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
@@ -514,8 +514,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <pre><code># A tibble: 2 × 2
   model               .estimate
   &lt;chr&gt;                   &lt;dbl&gt;
-1 Regresión Logística     0.964
-2 Random Forest           0.918</code></pre>
+1 Regresión Logística     0.971
+2 Random Forest           0.869</code></pre>
 </div>
 </div>
 <p>Es mejor utilizar y hacer una comparación de los métodos a partir de una validación cruzada.</p>
@@ -550,8 +550,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <pre><code># A tibble: 2 × 6
   .metric .estimator  mean     n std_err .config             
   &lt;chr&gt;   &lt;chr&gt;      &lt;dbl&gt; &lt;int&gt;   &lt;dbl&gt; &lt;chr&gt;               
-1 roc_auc binary     0.950     5  0.0147 Preprocessor1_Model1
-2 roc_auc binary     0.884     5  0.0312 Preprocessor1_Model1</code></pre>
+1 roc_auc binary     0.957     5 0.00680 Preprocessor1_Model1
+2 roc_auc binary     0.898     5 0.0230  Preprocessor1_Model1</code></pre>
 </div>
 </div>
 <p>Graficar las curvas roc de uno y otro método</p>
@@ -640,12 +640,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb27-35"><a href="#cb27-35" aria-hidden="true" tabindex="-1"></a><span class="fu">quantile</span>(auc_results<span class="sc">$</span>difference, <span class="at">probs =</span> <span class="fu">c</span>(<span class="fl">0.025</span>, <span class="fl">0.975</span>))</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>      2.5%      97.5% 
-0.02318881 0.15389769 </code></pre>
+0.01471021 0.13157396 </code></pre>
 </div>
 <div class="sourceCode cell-code" id="cb29"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a>puntos <span class="ot">&lt;-</span> <span class="fu">as_tibble</span>(<span class="fu">quantile</span>(auc_results<span class="sc">$</span>difference, <span class="at">probs =</span> <span class="fu">c</span>(<span class="fl">0.025</span>,<span class="fl">0.5</span>, <span class="fl">0.975</span>)))</span>
 <span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a>puntos <span class="ot">&lt;-</span> puntos <span class="sc">|&gt;</span> <span class="fu">mutate</span>(<span class="at">count =</span> <span class="fu">c</span>(<span class="dv">1</span>,<span class="dv">1</span>,<span class="dv">1</span>)) <span class="sc">|&gt;</span> <span class="fu">rename</span>(<span class="at">difference =</span> value)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
-<p>En éste bootstrap de la diferencia se obtuvo un intervalo de confianza del 95% el valor central es 0.0807451 como el intervalo va desde 0.0231888 a 0.1538977, no incluye al cero por lo tanto hay diferencias significativas.</p>
+<p>En éste bootstrap de la diferencia se obtuvo un intervalo de confianza del 95% el valor central es 0.0604097 como el intervalo va desde 0.0147102 a 0.131574, no incluye al cero por lo tanto hay diferencias significativas.</p>
 <p>Gráfico de histograma sobre la diferencia con los 500 bootstrap</p>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb30"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a><span class="co">#Éste gráfico siempre armo par bootstrap me encanta</span></span>
@@ -706,13 +706,13 @@ Setting direction: controls &lt; cases</code></pre>
     DeLong's test for two correlated ROC curves
 
 data:  logistic_roc and rf_roc
-Z = 2.7863, p-value = 0.005332
+Z = 3.4504, p-value = 0.0005597
 alternative hypothesis: true difference in AUC is not equal to 0
 95 percent confidence interval:
- 0.01373071 0.07886954
+ 0.04428547 0.16075793
 sample estimates:
 AUC of roc1 AUC of roc2 
-  0.9640347   0.9177346 </code></pre>
+  0.9714758   0.8689541 </code></pre>
 </div>
 </div>
 <p>Se rechaza, hay diferencias (bastante parecidas a la del bootstrap )</p>
@@ -779,13 +779,13 @@ Adjuntando el paquete: 'foreach'</code></pre>
     Paired t-test
 
 data:  cv_results$logistic and cv_results$rf
-t = 4.5679, df = 9, p-value = 0.001351
+t = 2.1819, df = 9, p-value = 0.057
 alternative hypothesis: true mean difference is not equal to 0
 95 percent confidence interval:
- 0.02958645 0.08764163
+ -0.00162726  0.09010975
 sample estimates:
 mean difference 
-     0.05861404 </code></pre>
+     0.04424124 </code></pre>
 </div>
 </div>
 <p>En este caso, indica mayor diferencia.</p>
@@ -826,7 +826,7 @@ mean difference
 <pre><code># A tibble: 1 × 3
   .metric .estimator .estimate
   &lt;chr&gt;   &lt;chr&gt;          &lt;dbl&gt;
-1 roc_auc binary         0.964</code></pre>
+1 roc_auc binary         0.971</code></pre>
 </div>
 </div>
 </section>
