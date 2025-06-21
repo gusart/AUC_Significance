@@ -140,6 +140,49 @@ comparison %>%
   arrange(desc(.estimate))
 ```
 
+
+
+
+Graficar las curvas roc de uno y otro método
+
+```{r}
+library(patchwork)
+# Para regresión logística
+gglogis <- logistic_pred %>% 
+  roc_curve(truth = ventas_altas,.pred_Si,event_level = "second") %>% 
+  autoplot() +
+  ggtitle("Curva ROC - Regresión Logística")
+
+
+# Para random forest
+ggrf <- rf_pred %>% 
+  roc_curve(truth = ventas_altas,  .pred_Si, event_level = "second") %>% 
+  autoplot() +
+  ggtitle("Curva ROC - Random Forest")
+gglogis+ggrf
+```
+
+Tener en cuenta que Random Forest no ha sido calibrado
+
+Curvas ROC en una misma gráfica.
+
+```{r}
+# O superpuestas
+bind_rows(
+  logistic_pred %>% mutate(model = "Regresión Logística"),
+  rf_pred %>% mutate(model = "Random Forest")
+) %>% 
+  group_by(model) %>% 
+  roc_curve(truth = ventas_altas, .pred_Si,event_level = "second") %>% 
+  autoplot()
+```
+
+Se advierte que regresión logística posee mayor área por lo tanto mejor predice los positivos.
+
+
+
+
+
 Es mejor utilizar y hacer una comparación de los métodos a partir de una validación cruzada.
 
 ## Comparación utilizando validación cruzada
@@ -170,41 +213,7 @@ collect_metrics(rf_res)
 )
 ```
 
-Graficar las curvas roc de uno y otro método
 
-```{r}
-library(patchwork)
-# Para regresión logística
-gglogis <- logistic_pred %>% 
-  roc_curve(truth = ventas_altas,.pred_Si) %>% 
-  autoplot() +
-  ggtitle("Curva ROC - Regresión Logística")
-
-
-# Para random forest
-ggrf <- rf_pred %>% 
-  roc_curve(truth = ventas_altas,  .pred_Si) %>% 
-  autoplot() +
-  ggtitle("Curva ROC - Random Forest")
-gglogis+ggrf
-```
-
-Tener en cuenta que Random Forest no ha sido calibrado
-
-Curvas ROC en una misma gráfica.
-
-```{r}
-# O superpuestas
-bind_rows(
-  logistic_pred %>% mutate(model = "Regresión Logística"),
-  rf_pred %>% mutate(model = "Random Forest")
-) %>% 
-  group_by(model) %>% 
-  roc_curve(truth = ventas_altas, .pred_Si) %>% 
-  autoplot()
-```
-
-Se advierte que regresión logística posee mayor área por lo tanto mejor predice los positivos.
 
 ## Comparación de la significancia de AUC mediante el método de bootstrap
 
